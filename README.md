@@ -1,11 +1,35 @@
+food.a6rron.in
 
-  # Food Nearby
+A simple site to find marriage functions and food-related events you can attend at your own risk.
+Includes a basic admin panel for adding events and a bot system connected to:
+https://github.com/A6rron/food-nearby-bot
 
-  This is a code bundle for Food Nearby. The original project is available at https://www.figma.com/design/yBTe5MOyUGwKw7xk9Xb8JU/Food-Nearby.
+Features
 
-  ## Running the code
+List nearby marriage/food events
 
-  Run `npm i` to install the dependencies.
+Minimal, mobile-friendly UI
 
-  Run `npm run dev` to start the development server.
-  
+Basic admin panel to add/edit events
+
+Bot integration for automated updates
+
+Tech
+
+Frontend: (Vite)
+
+Backend: simple API + DB
+
+Bot: whatsapp bot from linked repo
+
+Setup
+npm install
+npm run dev
+
+
+Add required environment variables in .env.
+
+Disclaimer
+
+Events are user/admin submitted.
+Attending is entirely at your own risk.
