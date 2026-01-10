@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { EventCard } from './EventCard';
 import { calculateDistance } from '../utils/distance';
 import { parseEventTime, formatEventTime } from '../utils/dateParser';
-import { supabase, isSupabaseConfigured, fetchEvents, type Event } from '../lib/supabase';
+import { isSupabaseConfigured, fetchEvents, type Event } from '../lib/supabase';
 import { Loader2, Clock } from 'lucide-react';
 import { Button } from './ui/button';
 
@@ -34,7 +34,7 @@ export function EventListings({ userLocation }: EventListingsProps) {
     try {
       setLoading(true);
       setError(null);
-      
+
       if (!isSupabaseConfigured()) {
         setError('Database not configured');
         setLoading(false);
@@ -49,7 +49,7 @@ export function EventListings({ userLocation }: EventListingsProps) {
       } else {
         setEvents(data || []);
       }
-      
+
       setLoading(false);
     } catch (err: any) {
       console.error('Error loading events:', err);
@@ -60,24 +60,10 @@ export function EventListings({ userLocation }: EventListingsProps) {
 
   useEffect(() => {
     loadEvents();
-    
-    // Set up real-time subscription
-    if (isSupabaseConfigured()) {
-      const channel = supabase
-        .channel('events_listing')
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'events' 
-        }, () => {
-          loadEvents();
-        })
-        .subscribe();
 
-      return () => {
-        channel.unsubscribe();
-      };
-    }
+    // Polling every 30 seconds to replace real-time subscription
+    const interval = setInterval(loadEvents, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Process events
@@ -86,21 +72,21 @@ export function EventListings({ userLocation }: EventListingsProps) {
       const name = event.event_name || 'Untitled Event';
       const location = event.location || 'Location TBA';
       const category = event.food_type || '';
-      
+
       // Parse GPS coordinates
       let lat: number | null = null;
       let lng: number | null = null;
-      
+
       if (event.gps_latitude) {
         const parsedLat = parseFloat(event.gps_latitude);
         if (!isNaN(parsedLat)) lat = parsedLat;
       }
-      
+
       if (event.gps_longitude) {
         const parsedLng = parseFloat(event.gps_longitude);
         if (!isNaN(parsedLng)) lng = parsedLng;
       }
-      
+
       // Combine date and time
       let timeString = '';
       if (event.date && event.time) {
@@ -110,17 +96,17 @@ export function EventListings({ userLocation }: EventListingsProps) {
       } else if (event.time) {
         timeString = event.time;
       }
-      
+
       const { date, isToday, isPast } = parseEventTime(timeString);
-      
+
       // Parse verified status
       const verified = event.verified === 'true' || event.verified === true;
-      
+
       // Calculate distance
       const distance = userLocation && lat !== null && lng !== null
         ? calculateDistance(userLocation.lat, userLocation.lng, lat, lng)
         : Infinity;
-      
+
       return {
         id: event.id,
         name,
@@ -202,7 +188,7 @@ export function EventListings({ userLocation }: EventListingsProps) {
             </div>
           </div>
         )}
-        
+
         {upcomingEvents.length > 0 && (
           <div className="mb-8 sm:mb-12">
             <h2 className="text-white mb-4 sm:mb-6 font-semibold text-base sm:text-lg">Upcoming Events</h2>
@@ -213,10 +199,10 @@ export function EventListings({ userLocation }: EventListingsProps) {
             </div>
           </div>
         )}
-        
+
         {pastEvents.length > 0 && (
           <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-800">
-            <a 
+            <a
               href="#past-events"
               className="flex items-center justify-center gap-2 text-gray-400 hover:text-white transition-colors group py-3 px-4 -mx-4 rounded touch-manipulation"
             >

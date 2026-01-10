@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { EventCard } from './EventCard';
 import { calculateDistance } from '../utils/distance';
 import { parseEventTime, formatEventTime } from '../utils/dateParser';
-import { supabase, isSupabaseConfigured, fetchEvents, type Event } from '../lib/supabase';
+import { isSupabaseConfigured, fetchEvents, type Event } from '../lib/supabase';
 import { Loader2, ArrowLeft, Clock } from 'lucide-react';
 import { Button } from './ui/button';
 
@@ -36,7 +36,7 @@ export function PastEventsPage({ userLocation }: PastEventsPageProps) {
     try {
       setLoading(true);
       setSupabaseError(null);
-      
+
       if (!isSupabaseConfigured()) {
         console.warn('Supabase is not configured. No past events to display.');
         setEvents([]);
@@ -62,7 +62,7 @@ export function PastEventsPage({ userLocation }: PastEventsPageProps) {
       setEvents(data);
       setSupabaseError(null);
       setLoading(false);
-      
+
     } catch (err: any) {
       console.error('Error fetching past events:', err);
       const errorMessage = err?.message || String(err) || 'Failed to load past events';
@@ -73,22 +73,10 @@ export function PastEventsPage({ userLocation }: PastEventsPageProps) {
 
   useEffect(() => {
     loadEvents();
-    
-    if (isSupabaseConfigured()) {
-      const subscription = supabase
-        .channel('past_events_channel')
-        .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'events' },
-          () => {
-            loadEvents();
-          }
-        )
-        .subscribe();
 
-      return () => {
-        subscription.unsubscribe();
-      };
-    }
+    // Polling every 30 seconds
+    const interval = setInterval(loadEvents, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Process events
@@ -97,20 +85,20 @@ export function PastEventsPage({ userLocation }: PastEventsPageProps) {
       const name = event.event_name ?? '';
       const location = event.location ?? '';
       const category = event.food_type ?? '';
-      
+
       let lat: number | null = null;
       let lng: number | null = null;
-      
+
       if (event.gps_latitude) {
         const parsedLat = Number(event.gps_latitude);
         if (!isNaN(parsedLat)) lat = parsedLat;
       }
-      
+
       if (event.gps_longitude) {
         const parsedLng = Number(event.gps_longitude);
         if (!isNaN(parsedLng)) lng = parsedLng;
       }
-      
+
       let timeString = '';
       if (event.date && event.time) {
         timeString = `${event.date}, ${event.time}`;
@@ -119,17 +107,17 @@ export function PastEventsPage({ userLocation }: PastEventsPageProps) {
       } else if (event.time) {
         timeString = event.time;
       }
-      
+
       const { date, isToday, isPast } = parseEventTime(timeString);
-      
-      const verified = typeof event.verified === 'boolean' 
-        ? event.verified 
+
+      const verified = typeof event.verified === 'boolean'
+        ? event.verified
         : event.verified === 'true';
-      
-      const distance = userLocation 
+
+      const distance = userLocation
         ? calculateDistance(userLocation.lat, userLocation.lng, lat, lng)
         : Infinity;
-      
+
       return {
         id: event.id,
         name,
@@ -176,7 +164,7 @@ export function PastEventsPage({ userLocation }: PastEventsPageProps) {
             <ArrowLeft className="size-4 mr-2" />
             Back to Home
           </Button>
-          
+
           <div className="flex items-center gap-3 mb-2">
             <Clock className="size-6 text-gray-400" />
             <h1 className="text-white font-semibold text-2xl">Past Events</h1>

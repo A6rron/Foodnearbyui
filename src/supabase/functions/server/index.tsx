@@ -24,4 +24,14 @@ app.get("/make-server-32f3d016/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-Deno.serve(app.fetch);
+// Graceful shutdown
+const server = Deno.serve(app.fetch);
+
+const shutdown = async () => {
+  console.log("Shutting down server...");
+  await kv.closeConnection();
+  server.shutdown();
+};
+
+Deno.addSignalListener("SIGTERM", shutdown);
+Deno.addSignalListener("SIGINT", shutdown);
