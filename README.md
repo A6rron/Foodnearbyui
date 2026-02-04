@@ -21,7 +21,7 @@ Includes a basic **admin panel** for adding events and a **WhatsApp bot system**
 
 ```sh
 npm install
-npm run dev
+npm run dev:all
 ```
 
 Add required environment variables in `.env`.

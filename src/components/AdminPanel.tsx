@@ -1,704 +1,641 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Badge } from './ui/badge';
-import {
-  Lock,
-  Plus,
-  Search,
-  Pencil,
-  Trash2,
-  CheckCircle2,
-  XCircle,
-  ArrowLeft,
-  Loader2,
-  Trash,
-  Clock,
-  MapPin,
-  ExternalLink,
-  Settings,
-  MoreVertical,
-  Filter
-} from 'lucide-react';
-import {
-  fetchEvents,
-  addEvent,
-  updateEvent,
-  deleteEvent,
-  toggleVerification,
-  deletePastEvents,
-  testConnection,
-  type Event
-} from '../lib/supabase';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { formatEventTime, parseEventTime } from '../utils/dateParser';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Badge } from './ui/badge';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip';
+    Lock,
+    Plus,
+    Search,
+    Pencil,
+    Trash2,
+    XCircle,
+    Loader2,
+    MoreVertical,
+    CheckCircle2,
+    MapPin,
+    Clock,
+    Calendar,
+    Utensils,
+    LogOut,
+    RefreshCw,
+    LayoutDashboard,
+    Filter
+} from 'lucide-react';
+import {
+    fetchEvents,
+    addEvent,
+    updateEvent,
+    deleteEvent,
+    toggleVerification,
+    deletePastEvents,
+    type Event
+} from '../lib/supabase';
+import { cn } from './ui/utils';
 
 const ADMIN_PASSWORD = 'admin123';
 
 export function AdminPanel() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [password, setPassword] = useState('');
+    const [loginError, setLoginError] = useState('');
+    const [loadingLogin, setLoadingLogin] = useState(false);
 
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+    // Data State
+    const [events, setEvents] = useState<Event[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterVerified, setFilterVerified] = useState<'all' | 'verified' | 'unverified'>('all');
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+    // UI State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'pending'>('all');
 
-  const [formData, setFormData] = useState({
-    event_name: '',
-    date: '',
-    time: '',
-    location: '',
-    food_type: '',
-    gps_latitude: '',
-    gps_longitude: '',
-    location_maps_link: '',
-    verified: 'false'
-  });
+    // Dialog State
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
+    const [currentEvent, setCurrentEvent] = useState<Partial<Event>>({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Login handler
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      setLoginError('');
-    } else {
-      setLoginError('Incorrect password');
-    }
-  };
+    // Delete Dialog
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
 
-  // Fetch events from database
-  const loadEvents = async () => {
-    setLoading(true);
-    setError('');
+    // Initial Load & Auth Check
+    useEffect(() => {
+        const storedAuth = sessionStorage.getItem('admin_auth');
+        if (storedAuth === 'true') {
+            setIsAuthenticated(true);
+        }
+    }, []);
 
-    const { data, error: fetchError } = await fetchEvents();
+    useEffect(() => {
+        if (isAuthenticated) {
+            loadEvents();
+            // Auto-refresh every 30 seconds
+            const interval = setInterval(loadEvents, 30000);
+            return () => clearInterval(interval);
+        }
+    }, [isAuthenticated]);
 
-    if (fetchError) {
-      setError(fetchError);
-      setEvents([]);
-    } else {
-      setEvents(data || []);
-    }
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoadingLogin(true);
+        setLoginError('');
 
-    setLoading(false);
-  };
+        // Simulate network delay for effect
+        await new Promise(resolve => setTimeout(resolve, 600));
 
-  // Load events when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      // Automatically clean up past events on load
-      const autoCleanup = async () => {
+        if (password === ADMIN_PASSWORD) {
+            setIsAuthenticated(true);
+            sessionStorage.setItem('admin_auth', 'true');
+        } else {
+            setLoginError('Incorrect password. Access denied.');
+        }
+        setLoadingLogin(false);
+    };
+
+    const handleLogout = () => {
+        setIsAuthenticated(false);
+        sessionStorage.removeItem('admin_auth');
+        setPassword('');
+    };
+
+    const loadEvents = async () => {
+        setLoading(true);
+        setError('');
+
+        // Auto cleanup past events first
         await deletePastEvents();
-        loadEvents();
-      };
 
-      autoCleanup();
-
-      // Polling every 30 seconds
-      const interval = setInterval(loadEvents, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [isAuthenticated]);
-
-  // Reset form
-  const resetForm = () => {
-    setFormData({
-      event_name: '',
-      date: '',
-      time: '',
-      location: '',
-      food_type: '',
-      gps_latitude: '',
-      gps_longitude: '',
-      location_maps_link: '',
-      verified: 'false'
-    });
-  };
-
-  // Handle add event
-  const handleAddEvent = async () => {
-    setLoading(true);
-
-    const { error: addError } = await addEvent({
-      ...formData,
-      verified: formData.verified,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    });
-
-    if (addError) {
-      alert(`Error adding event: ${addError}`);
-    } else {
-      setShowAddDialog(false);
-      resetForm();
-      await loadEvents();
-    }
-
-    setLoading(false);
-  };
-
-  // Handle edit event
-  const handleEditEvent = async () => {
-    if (!selectedEvent) return;
-
-    setLoading(true);
-
-    const { error: updateError } = await updateEvent(selectedEvent.id, {
-      ...formData,
-      updated_at: new Date().toISOString()
-    });
-
-    if (updateError) {
-      if (updateError.includes('not found')) {
-        setShowEditDialog(false);
-        setSelectedEvent(null);
-        resetForm();
-        await loadEvents();
-        alert('Event no longer exists. The event list has been refreshed.');
-      } else {
-        alert(`Error updating event: ${updateError}`);
-      }
-    } else {
-      setShowEditDialog(false);
-      setSelectedEvent(null);
-      resetForm();
-      await loadEvents();
-    }
-
-    setLoading(false);
-  };
-
-  // Handle delete event
-  const handleDeleteEvent = async () => {
-    if (!selectedEvent) return;
-
-    setLoading(true);
-
-    const { error: deleteError } = await deleteEvent(selectedEvent.id);
-
-    if (deleteError) {
-      if (deleteError.includes('not found')) {
-        setShowDeleteDialog(false);
-        setSelectedEvent(null);
-        await loadEvents();
-      } else {
-        alert(`Error deleting event: ${deleteError}`);
-      }
-    } else {
-      setShowDeleteDialog(false);
-      setSelectedEvent(null);
-      await loadEvents();
-    }
-
-    setLoading(false);
-  };
-
-  // Handle toggle verification
-  const handleToggleVerification = async (event: Event) => {
-    const isVerified = event.verified === 'true' || event.verified === true;
-
-    const { error: toggleError } = await toggleVerification(event.id, isVerified);
-
-    if (toggleError) {
-      if (toggleError.includes('not found')) {
-        await loadEvents();
-        return;
-      }
-      alert(`Error toggling verification: ${toggleError}`);
-    } else {
-      await loadEvents();
-    }
-  };
-
-  // Open edit dialog
-  const openEditDialog = (event: Event) => {
-    setSelectedEvent(event);
-    setFormData({
-      event_name: event.event_name || '',
-      date: event.date || '',
-      time: event.time || '',
-      location: event.location || '',
-      food_type: event.food_type || '',
-      gps_latitude: event.gps_latitude || '',
-      gps_longitude: event.gps_longitude || '',
-      location_maps_link: event.location_maps_link || '',
-      verified: typeof event.verified === 'boolean'
-        ? (event.verified ? 'true' : 'false')
-        : (event.verified || 'false')
-    });
-    setShowEditDialog(true);
-  };
-
-  // Open delete dialog
-  const openDeleteDialog = (event: Event) => {
-    setSelectedEvent(event);
-    setShowDeleteDialog(true);
-  };
-
-  // Filter and sort events
-  const filteredEvents = events
-    .filter(event => {
-      // Filter out past events
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      let timeString = '';
-      if (event.date && event.time) {
-        timeString = `${event.date}, ${event.time}`;
-      } else if (event.date) {
-        timeString = event.date;
-      }
-
-      if (timeString) {
-        const eventDate = new Date(timeString);
-        if (!isNaN(eventDate.getTime()) && eventDate < today) {
-          return false;
+        const { data, error: fetchError } = await fetchEvents();
+        if (fetchError) {
+            setError(fetchError);
+            setEvents([]);
+        } else {
+            setEvents(data || []);
         }
-      }
+        setLoading(false);
+    };
 
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch =
-        (event.event_name || '').toLowerCase().includes(searchLower) ||
-        (event.location || '').toLowerCase().includes(searchLower) ||
-        (event.food_type || '').toLowerCase().includes(searchLower);
+    const handleAdd = () => {
+        setDialogMode('add');
+        setCurrentEvent({
+            verified: 'false',
+            created_at: new Date().toISOString()
+        });
+        setIsDialogOpen(true);
+    };
 
-      if (!matchesSearch) return false;
+    const handleEdit = (event: Event) => {
+        setDialogMode('edit');
+        setCurrentEvent({ ...event });
+        setIsDialogOpen(true);
+    };
 
-      if (filterVerified === 'verified') {
-        return event.verified === 'true' || event.verified === true;
-      } else if (filterVerified === 'unverified') {
-        return event.verified === 'false' || event.verified === false || !event.verified;
-      }
+    const handleDeleteClick = (event: Event) => {
+        setEventToDelete(event);
+        setIsDeleteDialogOpen(true);
+    };
 
-      return true;
-    })
-    .sort((a, b) => {
-      // Sort by newest first
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
 
-  // Login Screen
-  if (!isAuthenticated) {
+        try {
+            if (dialogMode === 'add') {
+                const { error: addError } = await addEvent({
+                    ...currentEvent,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                });
+                if (addError) throw new Error(addError);
+            } else {
+                if (!currentEvent.id) throw new Error("Event ID missing");
+                const { error: updateError } = await updateEvent(currentEvent.id, {
+                    ...currentEvent,
+                    updated_at: new Date().toISOString()
+                });
+                if (updateError) throw new Error(updateError);
+            }
+
+            await loadEvents();
+            setIsDialogOpen(false);
+        } catch (err: any) {
+            alert(`Operation failed: ${err.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const confirmDelete = async () => {
+        if (!eventToDelete) return;
+        setIsSubmitting(true);
+        try {
+            const { error: deleteError } = await deleteEvent(eventToDelete.id);
+            if (deleteError) throw new Error(deleteError);
+            await loadEvents();
+            setIsDeleteDialogOpen(false);
+            setEventToDelete(null);
+        } catch (err: any) {
+            alert(`Delete failed: ${err.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleToggleVerify = async (event: Event) => {
+        const currentStatus = event.verified === 'true' || event.verified === true;
+        const { error: toggleError } = await toggleVerification(event.id, currentStatus);
+
+        if (toggleError) {
+            alert(`Status update failed: ${toggleError}`);
+        } else {
+            await loadEvents();
+        }
+    };
+
+    // Filtering
+    const filteredEvents = events.filter(event => {
+        const matchesSearch =
+            (event.event_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (event.location || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (event.food_type || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+        const isVerified = event.verified === 'true' || event.verified === true;
+        const matchesStatus =
+            statusFilter === 'all' ? true :
+                statusFilter === 'verified' ? isVerified :
+                    !isVerified;
+
+        return matchesSearch && matchesStatus;
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    if (!isAuthenticated) {
+        return (
+            <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
+                <div className="fixed inset-0 overflow-hidden pointer-events-none">
+                    <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-green-500/10 rounded-full blur-[120px]" />
+                    <div className="absolute bottom-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
+                </div>
+
+                <Card className="w-full max-w-md bg-gray-900/60 backdrop-blur-xl border-gray-800 shadow-2xl relative z-10">
+                    <CardHeader className="text-center pb-2">
+                        <div className="mx-auto size-12 rounded-xl bg-green-500/10 flex items-center justify-center mb-4 border border-green-500/20">
+                            <Lock className="size-6 text-green-500" />
+                        </div>
+                        <CardTitle className="text-2xl font-bold text-white">Admin Access</CardTitle>
+                        <CardDescription className="text-gray-400">Authenticate to manage events</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <div className="space-y-2">
+                                <Label className="text-gray-300">Password</Label>
+                                <div className="relative">
+                                    <Input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="bg-gray-800/50 border-gray-700 text-white pl-10 h-11"
+                                        placeholder="••••••••"
+                                    />
+                                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
+                                </div>
+                            </div>
+                            {loginError && (
+                                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-red-400 text-sm">
+                                    <XCircle className="size-4" />
+                                    {loginError}
+                                </div>
+                            )}
+                            <Button type="submit" className="w-full h-11 bg-green-600 hover:bg-green-500 text-white font-medium shadow-lg shadow-green-900/20" disabled={loadingLogin}>
+                                {loadingLogin ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+                                {loadingLogin ? 'Verifying...' : 'Login System'}
+                            </Button>
+                        </form>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
     return (
-      <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-        {/* Background Gradients */}
-        <div className="fixed top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-green-500/10 rounded-full blur-[100px]" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 rounded-full blur-[100px]" />
+        <div className="min-h-screen bg-[#0f172a] text-gray-100 flex flex-col">
+            {/* Top Navigation */}
+            <header className="sticky top-0 z-40 w-full border-b border-gray-800 bg-[#0f172a]/80 backdrop-blur-md">
+                <div className="container flex h-16 items-center justify-between px-4 sm:px-8 max-w-7xl mx-auto">
+                    <div className="flex flex-col">
+                        <span
+                            className="text-white text-base sm:text-lg tracking-wide leading-tight"
+                            style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600 }}
+                        >
+                            Food Nearby
+                        </span>
+                        <span
+                            className="text-gray-500 tracking-wide text-[10px] sm:text-xs"
+                            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                        >
+                            - Admin Panel
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="sm" onClick={loadEvents} disabled={loading} className="text-gray-400 hover:text-white hidden sm:flex">
+                            <RefreshCw className={cn("size-4 mr-2", loading && "animate-spin")} />
+                            Refresh
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={handleLogout} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
+                            <LogOut className="size-4 mr-2" />
+                            Logout
+                        </Button>
+                    </div>
+                </div>
+            </header>
+
+            <main className="flex-1 p-4 sm:p-8 max-w-7xl mx-auto w-full">
+                {/* Actions Bar */}
+                <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-8">
+                    <div className="relative w-full sm:w-96">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400 pointer-events-none" />
+                        <Input
+                            placeholder="Search by name, location..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10 bg-gray-900 border-gray-800 text-white h-10 w-full focus:bg-gray-800 transition-colors"
+                        />
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                        <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                            <SelectTrigger className="w-[140px] bg-gray-900/50 border-gray-800 h-10 text-gray-300">
+                                <Filter className="size-3.5 mr-2 text-gray-500" />
+                                <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-gray-900 border-gray-800 text-gray-300">
+                                <SelectItem value="all">All Status</SelectItem>
+                                <SelectItem value="verified">Verified Only</SelectItem>
+                                <SelectItem value="pending">Pending Only</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <div className="h-10 w-px bg-gray-800 hidden sm:block mx-1"></div>
+
+                        <Button onClick={handleAdd} className="bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/20 h-10 px-5 w-full sm:w-auto">
+                            <Plus className="size-4 mr-2" />
+                            Add Event
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Content Area */}
+                <Card className="bg-gray-900/40 border-gray-800 backdrop-blur-sm overflow-hidden">
+                    {events.length === 0 && loading ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                            <Loader2 className="size-8 animate-spin text-green-500 mb-4" />
+                            <p>Loading ecosystem data...</p>
+                        </div>
+                    ) : filteredEvents.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+                            <div className="size-16 rounded-full bg-gray-800/50 flex items-center justify-center mb-4">
+                                <Search className="size-8 opacity-50" />
+                            </div>
+                            <p className="text-lg font-medium text-gray-400">No events found</p>
+                            <p className="text-sm">Try adjusting your filters or add a new event.</p>
+                            <Button variant="link" onClick={() => { setSearchQuery(''); setStatusFilter('all'); }} className="text-green-500 mt-2">Clear all filters</Button>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Desktop Table View */}
+                            <div className="hidden md:block overflow-x-auto">
+                                <Table>
+                                    <TableHeader className="bg-gray-900/80">
+                                        <TableRow className="border-gray-800 hover:bg-transparent">
+                                            <TableHead className="text-gray-400 font-medium">Event Name</TableHead>
+                                            <TableHead className="text-gray-400 font-medium">Location</TableHead>
+                                            <TableHead className="text-gray-400 font-medium">Date & Time</TableHead>
+                                            <TableHead className="text-gray-400 font-medium">Status</TableHead>
+                                            <TableHead className="text-right text-gray-400 font-medium h-12">Actions</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredEvents.map((event) => {
+                                            const isVerified = event.verified === 'true' || event.verified === true;
+                                            return (
+                                                <TableRow key={event.id} className="border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                                                    <TableCell className="font-medium text-white">
+                                                        <div className="flex flex-col">
+                                                            <span>{event.event_name || 'Untitled'}</span>
+                                                            <span className="text-xs text-gray-500 font-normal">{event.food_type}</span>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="flex items-center text-gray-300">
+                                                            <MapPin className="size-3.5 mr-2 text-gray-500" />
+                                                            <span className="truncate max-w-[200px]" title={event.location || ''}>{event.location || 'N/A'}</span>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="text-sm text-gray-300">
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <Calendar className="size-3.5 text-gray-500" />
+                                                                {event.date || 'TBA'}
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 text-gray-500 text-xs">
+                                                                <Clock className="size-3.5" />
+                                                                {event.time || 'TBA'}
+                                                            </div>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant={isVerified ? "default" : "secondary"} className={cn(
+                                                            "font-normal",
+                                                            isVerified
+                                                                ? "bg-green-500/10 text-green-400 hover:bg-green-500/20 border-green-500/20"
+                                                                : "bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 border-yellow-500/20"
+                                                        )}>
+                                                            {isVerified ? 'Verified' : 'Pending'}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-white">
+                                                                    <MoreVertical className="size-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="bg-gray-900 border-gray-800 text-gray-200">
+                                                                <DropdownMatchItem onClick={() => handleEdit(event)} icon={Pencil} label="Edit Details" />
+                                                                <DropdownMatchItem
+                                                                    onClick={() => handleToggleVerify(event)}
+                                                                    icon={isVerified ? XCircle : CheckCircle2}
+                                                                    label={isVerified ? "Mark Unverified" : "Mark Verified"}
+                                                                    className={isVerified ? "text-yellow-400 focus:text-yellow-400 hover:text-yellow-400 focus:bg-yellow-950/30" : "text-green-400 focus:text-green-400 hover:text-green-400 focus:bg-green-950/30"}
+                                                                />
+                                                                <DropdownMenuSeparator className="bg-gray-800" />
+                                                                <DropdownMatchItem onClick={() => handleDeleteClick(event)} icon={Trash2} label="Delete Event" className="text-red-400 focus:text-red-400 focus:bg-red-950/30" />
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </div>
+
+                            {/* Mobile Card View */}
+                            <div className="md:hidden flex flex-col gap-3 p-4">
+                                {filteredEvents.map((event) => {
+                                    const isVerified = event.verified === 'true' || event.verified === true;
+                                    return (
+                                        <div key={event.id} className="bg-gray-800/30 border border-gray-800 rounded-xl p-4 space-y-3">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h3 className="font-semibold text-white">{event.event_name || 'Untitled'}</h3>
+                                                    <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                                                        <Utensils className="size-3" /> {event.food_type || 'General Food'}
+                                                    </p>
+                                                </div>
+                                                <Badge variant="outline" className={cn("text-xs border-0", isVerified ? "bg-green-500/10 text-green-500" : "bg-yellow-500/10 text-yellow-500")}>
+                                                    {isVerified ? 'Verified' : 'Pending'}
+                                                </Badge>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2 text-sm text-gray-300 bg-gray-900/50 p-3 rounded-lg">
+                                                <div className="flex items-center gap-2">
+                                                    <Calendar className="size-3.5 text-gray-500" />
+                                                    <span className="truncate">{event.date}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Clock className="size-3.5 text-gray-500" />
+                                                    <span className="truncate">{event.time}</span>
+                                                </div>
+                                                <div className="col-span-2 flex items-center gap-2">
+                                                    <MapPin className="size-3.5 text-gray-500" />
+                                                    <span className="truncate">{event.location}</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex justify-end gap-2 pt-2 border-t border-gray-800">
+                                                <Button variant="ghost" size="sm" onClick={() => handleEdit(event)} className="h-8 px-2 text-gray-400">Edit</Button>
+                                                <Button variant="ghost" size="sm" onClick={() => handleToggleVerify(event)} className={cn("h-8 px-2", isVerified ? "text-yellow-400 hover:text-yellow-300" : "text-green-400 hover:text-green-300")}>
+                                                    {isVerified ? 'Unverify' : 'Verify'}
+                                                </Button>
+                                                <Button variant="ghost" size="sm" onClick={() => handleDeleteClick(event)} className="h-8 px-2 text-red-400">Delete</Button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </Card>
+            </main>
+
+            {/* Add/Edit Dialog */}
+
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogContent style={{ backgroundColor: '#0f172a' }} className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-gray-800 p-6 shadow-xl sm:rounded-lg text-white max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                            {dialogMode === 'add' ? <Plus className="size-5 text-green-500" /> : <Pencil className="size-5 text-blue-500" />}
+                            {dialogMode === 'add' ? 'Create New Event' : 'Edit Event Details'}
+                        </DialogTitle>
+                        <DialogDescription className="text-gray-400">
+                            {dialogMode === 'add' ? 'Fill in the details to publish a new food event.' : 'Update the information for this event.'}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={handleSubmit} className="space-y-4 py-2">
+                        <div className="grid gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-gray-300">Event Name</Label>
+                                <Input
+                                    value={currentEvent.event_name || ''}
+                                    onChange={(e) => setCurrentEvent({ ...currentEvent, event_name: e.target.value })}
+                                    className="bg-gray-900 border-gray-800 focus:border-green-500/50"
+                                    placeholder="e.g. Community Lunch"
+                                    required
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-gray-300">Date</Label>
+                                    <Input
+                                        value={currentEvent.date || ''}
+                                        onChange={(e) => setCurrentEvent({ ...currentEvent, date: e.target.value })}
+                                        className="bg-gray-900 border-gray-800 focus:border-green-500/50"
+                                        placeholder="e.g. 12 Nov 2025"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-gray-300">Time</Label>
+                                    <Input
+                                        value={currentEvent.time || ''}
+                                        onChange={(e) => setCurrentEvent({ ...currentEvent, time: e.target.value })}
+                                        className="bg-gray-900 border-gray-800 focus:border-green-500/50"
+                                        placeholder="e.g. 1:00 PM"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-gray-300">Location Address</Label>
+                                <Textarea
+                                    value={currentEvent.location || ''}
+                                    onChange={(e) => setCurrentEvent({ ...currentEvent, location: e.target.value })}
+                                    className="bg-gray-900 border-gray-800 focus:border-green-500/50 min-h-[80px]"
+                                    placeholder="Full address of the event..."
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-gray-300">Food Type</Label>
+                                    <Input
+                                        value={currentEvent.food_type || ''}
+                                        onChange={(e) => setCurrentEvent({ ...currentEvent, food_type: e.target.value })}
+                                        className="bg-gray-900 border-gray-800 focus:border-green-500/50"
+                                        placeholder="e.g. Meals, Snacks"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-gray-300">Verification</Label>
+                                    <Select
+                                        value={String(currentEvent.verified) === 'true' ? 'true' : 'false'}
+                                        onValueChange={(v) => setCurrentEvent({ ...currentEvent, verified: v })}
+                                    >
+                                        <SelectTrigger className="bg-gray-900 border-gray-800">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-gray-900 border-gray-800 text-gray-300">
+                                            <SelectItem value="true">Verified</SelectItem>
+                                            <SelectItem value="false">Pending</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-900/50 p-4 rounded-xl border border-dashed border-gray-800 space-y-3">
+                                <div className="flex items-center gap-2 text-sm text-blue-400 font-medium pb-1 border-b border-gray-800/50 mb-1">
+                                    <MapPin className="size-4" /> GPS Coordinates (Optional)
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Latitude</Label>
+                                        <Input
+                                            value={currentEvent.gps_latitude || ''}
+                                            onChange={(e) => setCurrentEvent({ ...currentEvent, gps_latitude: e.target.value })}
+                                            className="bg-gray-950 border-gray-800 h-9 text-sm"
+                                            placeholder="10.000"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Longitude</Label>
+                                        <Input
+                                            value={currentEvent.gps_longitude || ''}
+                                            onChange={(e) => setCurrentEvent({ ...currentEvent, gps_longitude: e.target.value })}
+                                            className="bg-gray-950 border-gray-800 h-9 text-sm"
+                                            placeholder="76.000"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-gray-500">Google Maps Link</Label>
+                                    <Input
+                                        value={currentEvent.location_maps_link || ''}
+                                        onChange={(e) => setCurrentEvent({ ...currentEvent, location_maps_link: e.target.value })}
+                                        className="bg-gray-950 border-gray-800 h-9 text-sm"
+                                        placeholder="https://maps.google.com/..."
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <DialogFooter className="pt-4">
+                            <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)} className="text-gray-400 hover:text-white hover:bg-white/5">Cancel</Button>
+                            <Button type="submit" className="bg-green-600 hover:bg-green-500 text-white min-w-[100px]" disabled={isSubmitting}>
+                                {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : (dialogMode === 'add' ? 'Create' : 'Save Changes')}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation */}
+            <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                <DialogContent style={{ backgroundColor: '#0f172a' }} className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-md translate-x-[-50%] translate-y-[-50%] gap-4 border border-gray-800 p-6 shadow-xl sm:rounded-lg text-white">
+                    <DialogHeader>
+                        <DialogTitle className="text-red-400 flex items-center gap-2">
+                            <Trash2 className="size-5" />
+                            Delete Event
+                        </DialogTitle>
+                        <DialogDescription className="text-gray-400">
+                            Are you sure you want to permanently delete <span className="text-white font-medium">"{eventToDelete?.event_name}"</span>?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="ghost" onClick={() => setIsDeleteDialogOpen(false)} className="text-gray-400">Cancel</Button>
+                        <Button variant="destructive" onClick={confirmDelete} disabled={isSubmitting} className="bg-red-600 hover:bg-red-500">
+                            {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : 'Delete Permanently'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
-
-        <nav className="fixed top-0 w-full bg-[#0f172a]/80 backdrop-blur-md border-b border-gray-800 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center">
-            <div className="flex items-center gap-3">
-              <div className="size-8 rounded-lg bg-green-500/20 flex items-center justify-center border border-green-500/30">
-                <Lock className="size-4 text-green-500" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-white text-lg font-bold tracking-tight">Food Nearby</span>
-                <span className="text-gray-500 text-xs font-mono">ADMIN PLANEL</span>
-              </div>
-            </div>
-          </div>
-        </nav>
-
-        <Card className="w-full max-w-md bg-gray-900/50 backdrop-blur-xl border border-gray-800 shadow-2xl relative z-10 mx-4">
-          <CardHeader className="text-center pb-8 border-b border-gray-800/50">
-            <div className="mx-auto mb-6 size-16 rounded-2xl bg-gradient-to-br from-green-500/20 to-blue-500/20 flex items-center justify-center border border-gray-700 shadow-inner">
-              <Settings className="size-7 text-white" />
-            </div>
-            <CardTitle className="text-2xl text-white font-bold tracking-tight">Admin Access</CardTitle>
-            <CardDescription className="text-gray-400 mt-2">
-              Please enter your credentials to continue
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-8">
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-gray-300 text-sm font-medium">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="bg-gray-800/50 border-gray-700 text-white pl-4 pr-10 py-6 focus:border-green-500 focus:ring-green-500/20 transition-all rounded-xl"
-                    placeholder="Enter admin password"
-                    autoComplete="current-password"
-                    autoFocus
-                  />
-                  <Lock className="absolute right-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
-                </div>
-              </div>
-
-              {loginError && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-2">
-                  <XCircle className="size-4 text-red-500" />
-                  <p className="text-red-400 text-sm font-medium">{loginError}</p>
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full bg-green-600 hover:bg-green-500 text-white font-semibold py-6 rounded-xl shadow-lg shadow-green-900/20 transition-all active:scale-[0.98]"
-              >
-                Authenticate
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
     );
-  }
+}
 
-  return (
-    <div className="min-h-screen bg-[#0f172a] text-white selection:bg-green-500/30">
-      {/* Navbar - Matching Home Page style */}
-      <nav className="sticky top-0 z-40 bg-[#0f172a]/80 backdrop-blur-md border-b border-gray-800/60 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="size-8 rounded-lg bg-green-500/20 flex items-center justify-center border border-green-500/30">
-              <Lock className="size-4 text-green-500" />
-            </div>
-            <span className="text-white text-lg font-bold tracking-tight">Food Nearby <span className="text-gray-500 font-normal">Admin</span></span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={() => {
-                resetForm();
-                setShowAddDialog(true);
-              }}
-              size="sm"
-              className="bg-green-600 hover:bg-green-500 text-white shadow-lg shadow-green-900/20 rounded-lg font-medium"
-            >
-              <Plus className="size-4 mr-2" />
-              New Event
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setIsAuthenticated(false);
-                setEvents([]);
-              }}
-              className="text-gray-400 hover:text-white hover:bg-white/5 rounded-lg"
-            >
-              <ArrowLeft className="size-4 sm:mr-2" />
-              <span className="hidden sm:inline">Logout</span>
-            </Button>
-          </div>
-        </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Simple Header - Like Home Page Hero but smaller */}
-        <div className="mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Admin Dashboard</h1>
-          <p className="text-gray-400">Manage all community food events.</p>
-
-          {/* Minimal Filter Bar */}
-          <div className="mt-4 flex gap-2">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
-              <Input
-                placeholder="Search events..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-gray-800 border-gray-700 text-white pl-10 h-10 rounded-lg focus:ring-green-500/20 focus:border-green-500 w-full"
-              />
-            </div>
-            <Select value={filterVerified} onValueChange={(v: any) => setFilterVerified(v)}>
-              <SelectTrigger className="bg-gray-800 border-gray-700 text-white h-10 w-[140px] rounded-lg">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-700">
-                <SelectItem value="all" className="text-white">All Events</SelectItem>
-                <SelectItem value="verified" className="text-white">Verified</SelectItem>
-                <SelectItem value="unverified" className="text-white">Pending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Event List - EXACT Style as EventCard.tsx */}
-        <div className="flex flex-col gap-4">
-          {loading && events.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="size-10 text-green-500 animate-spin mb-4" />
-              <p className="text-gray-400">Loading events...</p>
-            </div>
-          ) : filteredEvents.length === 0 ? (
-            <div className="text-center py-20 text-gray-500">
-              No events found.
-            </div>
-          ) : (
-            filteredEvents.map((event) => {
-              // Prepare data to match EventCardProps as much as possible
-              const isVerified = event.verified === 'true' || event.verified === true;
-
-              let timeString = '';
-              if (event.date && event.time) {
-                timeString = `${event.date}, ${event.time}`;
-              } else if (event.date) {
-                timeString = event.date;
-              } else if (event.time) {
-                timeString = event.time;
-              }
-              const { date, isToday } = parseEventTime(timeString);
-              const displayTime = formatEventTime(date);
-
-              // Mock coordinates processing if needed, mostly for display
-              const hasCoordinates = event.gps_latitude && event.gps_longitude;
-              const googleMapsUrl = event.location_maps_link || (hasCoordinates
-                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location || '')}`
-                : null);
-
-              return (
-                <div key={event.id} className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gray-800 border border-gray-700 hover:border-gray-600 transition-all group">
-                  <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
-                    <div className="flex-1 min-w-0 w-full">
-                      <div className="flex items-start gap-2 mb-2.5 sm:mb-3 flex-wrap">
-                        <h3 className="text-white text-base sm:text-lg font-semibold">{event.event_name || 'Untitled Event'}</h3>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          {isToday && (
-                            <Badge className="bg-red-500 hover:bg-red-500 rounded-full text-[10px] sm:text-xs px-2 py-0.5">
-                              Today
-                            </Badge>
-                          )}
-                          {isVerified && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div className="flex items-center flex-shrink-0 cursor-help">
-                                    <CheckCircle2 className="size-4 sm:size-5 text-green-500 transition-all hover:scale-110 hover:text-green-400" />
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Verified by admin</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                          {!isVerified && (
-                            <Badge variant="outline" className="text-yellow-400 border-yellow-500/30 bg-yellow-500/10 text-[10px]">
-                              Pending
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      {event.food_type && (
-                        <div className="text-gray-400 mb-2.5 sm:mb-3 text-sm">{event.food_type}</div>
-                      )}
-
-                      <div className="flex flex-col gap-2">
-                        {/* Location */}
-                        <div className="flex items-start gap-2 text-gray-300">
-                          <MapPin className="size-3.5 sm:size-4 flex-shrink-0 mt-0.5" />
-                          <span className="text-xs sm:text-sm break-words flex-1">{event.location || 'Location not specified'}</span>
-                        </div>
-
-                        {/* Time */}
-                        <div className="flex items-center gap-2 flex-wrap text-xs sm:text-sm">
-                          <div className="flex items-center gap-1.5 text-gray-300">
-                            <Clock className="size-3.5 sm:size-4 flex-shrink-0" />
-                            <span>{displayTime}</span>
-                          </div>
-                          <span className="text-gray-600">•</span>
-                          <span className="text-gray-500">ID: {String(event.id).slice(-4)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Helper Actions (Desktop & Mobile Unified) */}
-                    <div className="flex items-center gap-2 mt-4 sm:mt-0 sm:ml-4 border-t sm:border-t-0 sm:border-l border-gray-700/50 pt-3 sm:pt-0 sm:pl-4 min-w-[140px] justify-end">
-                      <Button
-                        size="sm"
-                        variant={isVerified ? "ghost" : "default"}
-                        onClick={() => handleToggleVerification(event)}
-                        className={isVerified ? "text-red-400 hover:text-red-300 hover:bg-red-900/20 px-2" : "bg-green-600 hover:bg-green-500 text-white h-8 px-3 text-xs"}
-                      >
-                        {isVerified ? <XCircle className="size-4" /> : "Verify"}
-                      </Button>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-white hover:bg-gray-700">
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-gray-900 border-gray-700 text-gray-200">
-                          <DropdownMenuItem onClick={() => openEditDialog(event)} className="hover:bg-gray-800 cursor-pointer">
-                            <Pencil className="size-4 mr-2" /> Edit Details
-                          </DropdownMenuItem>
-                          {googleMapsUrl && (
-                            <DropdownMenuItem asChild>
-                              <a href={googleMapsUrl} target="_blank" rel="noreferrer" className="flex items-center hover:bg-gray-800 cursor-pointer">
-                                <ExternalLink className="size-4 mr-2" /> Open Maps
-                              </a>
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => openDeleteDialog(event)} className="hover:bg-gray-800 text-red-400 focus:text-red-400 cursor-pointer">
-                            <Trash2 className="size-4 mr-2 text-red-400" /> Delete Event
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-      </main>
-
-      {/* Add/Edit Dialog */}
-      <Dialog open={showAddDialog || showEditDialog} onOpenChange={(open) => {
-        if (!open) {
-          setShowAddDialog(false);
-          setShowEditDialog(false);
-          resetForm();
-        }
-      }}>
-        <DialogContent className="bg-gray-900/95 border-gray-700 text-white max-w-2xl backdrop-blur-xl w-[95vw] sm:w-full p-4 sm:p-6 overflow-y-auto max-h-[90vh]">
-          <DialogHeader className="mb-4">
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              {showAddDialog ? <Plus className="size-5 text-green-500" /> : <Pencil className="size-5 text-blue-400" />}
-              {showAddDialog ? 'Add New Event' : 'Edit Event'}
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Fill in the details below. Required fields are marked with verification status.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 sm:gap-6">
-            <div className="grid gap-2">
-              <Label className="text-gray-300">Event Name</Label>
-              <Input
-                value={formData.event_name}
-                onChange={(e) => setFormData({ ...formData, event_name: e.target.value })}
-                className="bg-gray-800 border-gray-700 text-white focus:border-green-500"
-                placeholder="e.g. Community Lunch"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label className="text-gray-300">Date</Label>
-                <Input
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:border-green-500"
-                  placeholder="e.g. 12 Nov 2025"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label className="text-gray-300">Time</Label>
-                <Input
-                  value={formData.time}
-                  onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:border-green-500"
-                  placeholder="e.g. 7:00 PM"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label className="text-gray-300">Location</Label>
-              <Textarea
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="bg-gray-800 border-gray-700 text-white focus:border-green-500 resize-none"
-                rows={2}
-                placeholder="Address or place name"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label className="text-gray-300">Maps Link (Optional)</Label>
-                <Input
-                  value={formData.location_maps_link}
-                  onChange={(e) => setFormData({ ...formData, location_maps_link: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:border-green-500"
-                  placeholder="https://maps.google..."
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label className="text-gray-300">Food Type (Optional)</Label>
-                <Input
-                  value={formData.food_type}
-                  onChange={(e) => setFormData({ ...formData, food_type: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:border-green-500"
-                  placeholder="e.g. Vegetarian, Buffet"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label className="text-gray-300">Verification</Label>
-              <Select
-                value={formData.verified}
-                onValueChange={(v) => setFormData({ ...formData, verified: v })}
-              >
-                <SelectTrigger className="bg-gray-800 border-gray-700 text-white w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                  <SelectItem value="true">Verified</SelectItem>
-                  <SelectItem value="false">Unverified</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-700/50 mt-4">
-            <Button variant="ghost" onClick={() => { setShowAddDialog(false); setShowEditDialog(false); }} className="text-gray-400 hover:text-white">Cancel</Button>
-            <Button onClick={showAddDialog ? handleAddEvent : handleEditEvent} className="bg-green-600 hover:bg-green-500 text-white">
-              {showAddDialog ? 'Add Event' : 'Save Changes'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-sm backdrop-blur-xl w-[90vw] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-400">
-              <Trash className="size-5" />
-              Confirm Deletion
-            </DialogTitle>
-            <DialogDescription className="text-gray-400 pt-2">
-              Are you sure you want to delete this event? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-3 pt-4 mt-2">
-            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)} className="text-gray-400 hover:text-white">Cancel</Button>
-            <Button onClick={handleDeleteEvent} variant="destructive" className="bg-red-600 hover:bg-red-500">Delete Event</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+function DropdownMatchItem({ onClick, icon: Icon, label, className }: any) {
+    return (
+        <DropdownMenuItem onClick={onClick} className={cn("cursor-pointer hover:bg-gray-800 focus:bg-gray-800 py-2.5", className)}>
+            <Icon className="size-4 mr-2" />
+            {label}
+        </DropdownMenuItem>
+    );
 }

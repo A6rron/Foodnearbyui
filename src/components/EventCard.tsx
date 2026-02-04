@@ -20,11 +20,12 @@ interface EventCardProps {
     displayTime: string;
     isToday: boolean;
   };
+  actionSlot?: React.ReactNode;
 }
 
-export function EventCard({ event }: EventCardProps) {
+export function EventCard({ event, actionSlot }: EventCardProps) {
   const hasCoordinates = event.lat != null && event.lng != null && !isNaN(event.lat) && !isNaN(event.lng);
-  const googleMapsUrl = hasCoordinates 
+  const googleMapsUrl = hasCoordinates
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location)}`
     : null;
 
@@ -32,7 +33,7 @@ export function EventCard({ event }: EventCardProps) {
     <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-gray-800 border border-gray-700 hover:border-gray-600 hover:shadow-xl transition-all">
       <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
         <div className="flex-1 min-w-0 w-full">
-          <div className="flex items-start gap-2 mb-2.5 sm:mb-3 flex-wrap">
+          <div className="flex items-center gap-2 mb-2.5 sm:mb-3 flex-wrap">
             <h3 className="text-white text-base sm:text-lg font-semibold">{event.name}</h3>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {event.isToday && (
@@ -56,11 +57,11 @@ export function EventCard({ event }: EventCardProps) {
               )}
             </div>
           </div>
-          
+
           {event.category && event.category.trim() !== '' && (
             <div className="text-gray-400 mb-2.5 sm:mb-3 text-sm">{event.category}</div>
           )}
-          
+
           <div className="flex flex-col gap-2">
             {googleMapsUrl ? (
               <a
@@ -71,7 +72,6 @@ export function EventCard({ event }: EventCardProps) {
               >
                 <MapPin className="size-3.5 sm:size-4 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
                 <span className="text-xs sm:text-sm break-words flex-1">{event.location}</span>
-                <ExternalLink className="size-3 flex-shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
               </a>
             ) : (
               <div className="flex items-start gap-2 text-gray-300">
@@ -79,7 +79,7 @@ export function EventCard({ event }: EventCardProps) {
                 <span className="text-xs sm:text-sm break-words flex-1">{event.location}</span>
               </div>
             )}
-            
+
             <div className="flex items-center gap-2 flex-wrap text-xs sm:text-sm">
               {hasCoordinates && event.distance !== Infinity && (
                 <>
@@ -87,7 +87,7 @@ export function EventCard({ event }: EventCardProps) {
                   <span className="text-gray-600">•</span>
                 </>
               )}
-              
+
               <div className="flex items-center gap-1.5 text-gray-300">
                 <Clock className="size-3.5 sm:size-4 flex-shrink-0" />
                 <span>{event.displayTime}</span>
@@ -95,6 +95,12 @@ export function EventCard({ event }: EventCardProps) {
             </div>
           </div>
         </div>
+
+        {actionSlot && (
+          <div className="flex-shrink-0 self-start sm:self-center w-full sm:w-auto mt-4 sm:mt-0 pt-3 sm:pt-0 border-t sm:border-t-0 sm:border-l border-gray-700/50 sm:pl-4">
+            {actionSlot}
+          </div>
+        )}
       </div>
     </div>
   );
